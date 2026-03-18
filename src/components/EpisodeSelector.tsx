@@ -39,6 +39,7 @@ interface EpisodeSelectorProps {
   videoYear?: string;
   availableSources?: SearchResult[];
   sourceSearchLoading?: boolean;
+  backgroundSourcesLoading?: boolean;
   sourceSearchError?: string | null;
   /** 预计算的测速结果，避免重复测速 */
   precomputedVideoInfo?: Map<string, VideoInfo>;
@@ -59,6 +60,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   videoTitle,
   availableSources = [],
   sourceSearchLoading = false,
+  backgroundSourcesLoading = false,
   sourceSearchError = null,
   precomputedVideoInfo,
 }) => {
@@ -91,6 +93,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [activeTab, setActiveTab] = useState<'episodes' | 'sources'>(
     totalEpisodes > 1 ? 'episodes' : 'sources'
   );
+  const hasAvailableSources = availableSources.length > 0;
+  const showBlockingSourceSearch = sourceSearchLoading && !hasAvailableSources;
+  const showSourceRefreshHint =
+    (sourceSearchLoading || backgroundSourcesLoading) && hasAvailableSources;
+  const showBlockingSourceError = Boolean(sourceSearchError) && !hasAvailableSources;
+  const showInlineSourceError = Boolean(sourceSearchError) && hasAvailableSources;
 
   // 当前分页索引（0 开始）
   const initialPage = Math.floor((value - 1) / episodesPerPage);
@@ -185,7 +193,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         }
       }
     }
-    return false;
+    return true;
   });
 
   // 当切换到换源tab并且有源数据时，异步获取视频信息 - 移除 attemptedSources 依赖避免循环触发
@@ -503,7 +511,19 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       {/* 换源 Tab 内容 */}
       {activeTab === 'sources' && (
         <div className='flex flex-col h-full mt-4'>
-          {sourceSearchLoading && (
+          {showSourceRefreshHint && (
+            <div className='mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 dark:border-green-900/60 dark:bg-green-900/20 dark:text-green-300'>
+              正在补充更多播放源，当前可用结果不受影响。
+            </div>
+          )}
+
+          {showInlineSourceError && (
+            <div className='mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'>
+              补充播放源时遇到问题：{sourceSearchError}
+            </div>
+          )}
+
+          {showBlockingSourceSearch && (
             <div className='flex items-center justify-center py-8'>
               <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
               <span className='ml-2 text-sm text-gray-600 dark:text-gray-300'>
@@ -512,7 +532,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             </div>
           )}
 
-          {sourceSearchError && (
+          {showBlockingSourceError && (
             <div className='flex items-center justify-center py-8'>
               <div className='text-center'>
                 <div className='text-red-500 text-2xl mb-2'>⚠️</div>
@@ -523,8 +543,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             </div>
           )}
 
-          {!sourceSearchLoading &&
-            !sourceSearchError &&
+          {!showBlockingSourceSearch &&
+            !showBlockingSourceError &&
             availableSources.length === 0 && (
               <div className='flex items-center justify-center py-8'>
                 <div className='text-center'>
@@ -536,8 +556,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               </div>
             )}
 
-          {!sourceSearchLoading &&
-            !sourceSearchError &&
+          {!showBlockingSourceSearch &&
             availableSources.length > 0 && (
               <div className='flex-1 overflow-y-auto space-y-2 sm:space-y-3 pb-20'>
                 {availableSources

@@ -105,8 +105,9 @@ export default function NetDiskSearchResults({ results, loading, error, total }:
         info: CLOUD_TYPES[type as keyof typeof CLOUD_TYPES] || CLOUD_TYPES.others
       })).sort((a, b) => b.count - a.count) // 按数量降序排列
     : [];
+  const hasResults = !!results && Object.keys(results).length > 0;
 
-  if (loading) {
+  if (loading && !hasResults) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -115,7 +116,7 @@ export default function NetDiskSearchResults({ results, loading, error, total }:
     );
   }
 
-  if (error) {
+  if (error && !hasResults) {
     // 判断是否为功能未启用的错误
     const isFunctionDisabled = error.includes('未启用') || error.includes('未配置') || error.includes('配置不完整');
     
@@ -182,6 +183,19 @@ export default function NetDiskSearchResults({ results, loading, error, total }:
 
   return (
     <div className="relative">
+      {loading && hasResults && (
+        <div className="mb-4 flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-900/20 dark:text-blue-300">
+          <div className="mr-3 h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500 dark:border-blue-900 dark:border-t-blue-400"></div>
+          正在刷新网盘结果，当前列表保持可用。
+        </div>
+      )}
+
+      {error && hasResults && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300">
+          刷新网盘结果时遇到问题，已保留上一批结果：{error}
+        </div>
+      )}
+
       {/* 快速筛选和导航栏 - 使用负top值消除空隙 */}
       <div
         className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-md shadow-lg border-b border-gray-200 dark:border-gray-700 sticky z-10 mb-6"

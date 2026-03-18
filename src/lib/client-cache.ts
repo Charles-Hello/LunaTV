@@ -51,6 +51,9 @@ export class ClientCache {
       const response = await fetch(url, {
         method: 'DELETE',
       });
+      if (response.status === 401 || response.status === 403) {
+        return;
+      }
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

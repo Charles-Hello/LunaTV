@@ -49,6 +49,7 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { DEFAULT_CONFIG_SUBSCRIPTION_URL } from '@/lib/config-subscription';
 
 import AIRecommendConfig from '@/components/AIRecommendConfig';
 import CacheManager from '@/components/CacheManager';
@@ -4865,8 +4866,8 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [configContent, setConfigContent] = useState('');
-  const [subscriptionUrl, setSubscriptionUrl] = useState('');
-  const [autoUpdate, setAutoUpdate] = useState(false);
+  const [subscriptionUrl, setSubscriptionUrl] = useState(DEFAULT_CONFIG_SUBSCRIPTION_URL);
+  const [autoUpdate, setAutoUpdate] = useState(true);
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
 
 
@@ -4875,11 +4876,11 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     if (config?.ConfigFile) {
       setConfigContent(config.ConfigFile);
     }
-    if (config?.ConfigSubscribtion) {
-      setSubscriptionUrl(config.ConfigSubscribtion.URL);
-      setAutoUpdate(config.ConfigSubscribtion.AutoUpdate);
-      setLastCheckTime(config.ConfigSubscribtion.LastCheck || '');
-    }
+    setSubscriptionUrl(
+      config?.ConfigSubscribtion?.URL || DEFAULT_CONFIG_SUBSCRIPTION_URL
+    );
+    setAutoUpdate(config?.ConfigSubscribtion?.AutoUpdate ?? true);
+    setLastCheckTime(config?.ConfigSubscribtion?.LastCheck || '');
   }, [config]);
 
 
@@ -4986,7 +4987,7 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
               type='url'
               value={subscriptionUrl}
               onChange={(e) => setSubscriptionUrl(e.target.value)}
-              placeholder='https://example.com/config.json'
+              placeholder={DEFAULT_CONFIG_SUBSCRIPTION_URL}
               disabled={false}
               className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
             />

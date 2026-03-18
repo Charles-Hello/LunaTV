@@ -1,0 +1,37 @@
+services:
+  moontv-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lunatv-local:dev
+    container_name: moontv-core-local
+    restart: unless-stopped
+    ports:
+      - '14009:3000'
+    env_file:
+      - ./.env.docker.local
+    volumes:
+      - video-cache-local:/app/video-cache
+    depends_on:
+      - moontv-kvrocks
+    networks:
+      - moontv-local-network
+
+  moontv-kvrocks:
+    image: apache/kvrocks
+    container_name: moontv-kvrocks-local
+    restart: unless-stopped
+    ports:
+      - '6666:6666'
+    volumes:
+      - kvrocks-data-local:/var/lib/kvrocks
+    networks:
+      - moontv-local-network
+
+networks:
+  moontv-local-network:
+    driver: bridge
+
+volumes:
+  kvrocks-data-local:
+  video-cache-local:

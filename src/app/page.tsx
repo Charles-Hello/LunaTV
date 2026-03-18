@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BangumiCalendarData,
 } from '@/lib/bangumi.client';
-import { cleanExpiredCache, clearRecommendsCache } from '@/lib/shortdrama-cache';
+import { initShortdramaCache, clearRecommendsCache } from '@/lib/shortdrama-cache';
 import { ShortDramaItem, ReleaseCalendarItem } from '@/lib/types';
 // 客户端收藏 API
 import {
@@ -376,8 +376,8 @@ function HomeClient() {
   }, [favoriteItems]);
 
   useEffect(() => {
-    // 清理过期缓存
-    cleanExpiredCache().catch(console.error);
+    // 初始化短剧缓存清理任务
+    initShortdramaCache().catch(console.error);
 
     // 清除可能缓存了空数据的短剧推荐缓存
     clearRecommendsCache().catch(console.error);

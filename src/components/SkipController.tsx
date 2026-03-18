@@ -46,8 +46,8 @@ export default function SkipController({
   const [batchSettings, setBatchSettings] = useState(() => {
     const savedEnableAutoSkip = typeof window !== 'undefined' ? localStorage.getItem('enableAutoSkip') : null;
     const savedEnableAutoNextEpisode = typeof window !== 'undefined' ? localStorage.getItem('enableAutoNextEpisode') : null;
-    const userAutoSkip = savedEnableAutoSkip !== null ? JSON.parse(savedEnableAutoSkip) : true;
-    const userAutoNextEpisode = savedEnableAutoNextEpisode !== null ? JSON.parse(savedEnableAutoNextEpisode) : true;
+    const userAutoSkip = savedEnableAutoSkip !== null ? JSON.parse(savedEnableAutoSkip) : false;
+    const userAutoNextEpisode = savedEnableAutoNextEpisode !== null ? JSON.parse(savedEnableAutoNextEpisode) : false;
 
     return {
       openingStart: '0:00',   // 片头开始时间（分:秒格式）
@@ -68,8 +68,8 @@ export default function SkipController({
     const loadUserSettings = () => {
       const savedEnableAutoSkip = localStorage.getItem('enableAutoSkip');
       const savedEnableAutoNextEpisode = localStorage.getItem('enableAutoNextEpisode');
-      const userAutoSkip = savedEnableAutoSkip !== null ? JSON.parse(savedEnableAutoSkip) : true;
-      const userAutoNextEpisode = savedEnableAutoNextEpisode !== null ? JSON.parse(savedEnableAutoNextEpisode) : true;
+      const userAutoSkip = savedEnableAutoSkip !== null ? JSON.parse(savedEnableAutoSkip) : false;
+      const userAutoNextEpisode = savedEnableAutoNextEpisode !== null ? JSON.parse(savedEnableAutoNextEpisode) : false;
 
       setBatchSettings(prev => ({
         ...prev,
@@ -566,8 +566,11 @@ export default function SkipController({
         end: newSegment.end,
         type: newSegment.type as 'opening' | 'ending',
         title: newSegment.title || (newSegment.type === 'opening' ? '片头' : '片尾'),
-        autoSkip: true, // 默认开启自动跳过
-        autoNextEpisode: newSegment.type === 'ending', // 片尾默认开启自动下一集
+        autoSkip: batchSettingsRef.current.autoSkip,
+        autoNextEpisode:
+          newSegment.type === 'ending'
+            ? batchSettingsRef.current.autoNextEpisode
+            : false,
       };
 
       const updatedConfig: EpisodeSkipConfig = {

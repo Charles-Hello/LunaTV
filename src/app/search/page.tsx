@@ -53,12 +53,19 @@ function SearchPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentQueryRef = useRef<string>('');
+  const lastNetdiskQueryRef = useRef('');
+  const netdiskSearchRequestIdRef = useRef(0);
+  const lastYoutubeQueryRef = useRef('');
+  const youtubeSearchRequestIdRef = useRef(0);
+  const lastTmdbActorQueryRef = useRef('');
+  const tmdbActorSearchRequestIdRef = useRef(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const lastHistoryQueryRef = useRef('');
   const [totalSources, setTotalSources] = useState(0);
   const [completedSources, setCompletedSources] = useState(0);
   const pendingResultsRef = useRef<SearchResult[]>([]);
@@ -81,6 +88,7 @@ function SearchPageClient() {
   const [netdiskResults, setNetdiskResults] = useState<{ [key: string]: any[] } | null>(null);
   const [netdiskLoading, setNetdiskLoading] = useState(false);
   const [netdiskError, setNetdiskError] = useState<string | null>(null);
+  const [netdiskWarning, setNetdiskWarning] = useState<string | null>(null);
   const [netdiskTotal, setNetdiskTotal] = useState(0);
 
   // ACG动漫磁力搜索相关状态
@@ -100,6 +108,7 @@ function SearchPageClient() {
   const [tmdbActorResults, setTmdbActorResults] = useState<any[] | null>(null);
   const [tmdbActorLoading, setTmdbActorLoading] = useState(false);
   const [tmdbActorError, setTmdbActorError] = useState<string | null>(null);
+  const [tmdbActorWarning, setTmdbActorWarning] = useState<string | null>(null);
   const [tmdbActorType, setTmdbActorType] = useState<'movie' | 'tv'>('movie');
 
   // TMDB筛选状态
@@ -244,6 +253,19 @@ function SearchPageClient() {
     const bNum = parseInt(bYear, 10);
 
     return order === 'asc' ? aNum - bNum : bNum - aNum;
+  };
+
+  const resetVideoSearchStream = () => {
+    if (eventSourceRef.current) {
+      try { eventSourceRef.current.close(); } catch { }
+      eventSourceRef.current = null;
+    }
+
+    pendingResultsRef.current = [];
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
   };
 
   // 辅助函数：检查标题是否包含搜索词（用于精确搜索）
@@ -540,17 +562,45 @@ function SearchPageClient() {
 
   // 监听搜索类型变化，如果切换到网盘/YouTube/TMDB演员搜索且有搜索词，立即搜索
   useEffect(() => {
+    if (searchType !== 'video') {
+      resetVideoSearchStream();
+      setIsLoading(false);
+    }
+
     if ((searchType === 'netdisk' || searchType === 'youtube' || searchType === 'tmdb-actor') && showResults) {
       const currentQuery = searchQuery.trim() || searchParams.get('q');
       if (currentQuery) {
-        if (searchType === 'netdisk' && netdiskResourceType === 'netdisk' && !netdiskLoading && !netdiskResults && !netdiskError) {
+        const normalizedCurrentQuery = normalizeSearchKeyword(currentQuery);
+        if (
+          searchType === 'netdisk' &&
+          netdiskResourceType === 'netdisk' &&
+          !netdiskLoading &&
+          (
+            lastNetdiskQueryRef.current !== normalizedCurrentQuery ||
+            (!netdiskResults && !netdiskError)
+          )
+        ) {
           handleNetDiskSearch(currentQuery);
         } else if (searchType === 'netdisk' && netdiskResourceType === 'acg') {
           // ACG 搜索：触发 AcgSearch 组件搜索
           setAcgTriggerSearch(prev => !prev);
-        } else if (searchType === 'youtube' && !youtubeLoading && !youtubeResults && !youtubeError) {
+        } else if (
+          searchType === 'youtube' &&
+          !youtubeLoading &&
+          (
+            lastYoutubeQueryRef.current !== normalizedCurrentQuery ||
+            (!youtubeResults && !youtubeError)
+          )
+        ) {
           handleYouTubeSearch(currentQuery);
-        } else if (searchType === 'tmdb-actor' && !tmdbActorLoading && !tmdbActorResults && !tmdbActorError) {
+        } else if (
+          searchType === 'tmdb-actor' &&
+          !tmdbActorLoading &&
+          (
+            lastTmdbActorQueryRef.current !== normalizedCurrentQuery ||
+            (!tmdbActorResults && !tmdbActorError)
+          )
+        ) {
           handleTmdbActorSearch(currentQuery, tmdbActorType, tmdbFilterState);
         }
       }
@@ -565,23 +615,25 @@ function SearchPageClient() {
     if (query) {
       setSearchQuery(query);
       // 新搜索：关闭旧连接并清空结果
-      if (eventSourceRef.current) {
-        try { eventSourceRef.current.close(); } catch { }
-        eventSourceRef.current = null;
-      }
+      resetVideoSearchStream();
       setSearchResults([]);
       setTotalSources(0);
       setCompletedSources(0);
-      // 清理缓冲
-      pendingResultsRef.current = [];
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-      setIsLoading(true);
       setShowResults(true);
+      setShowSuggestions(false);
 
       const trimmed = query.trim();
+
+      if (searchType !== 'video') {
+        setIsLoading(false);
+        if (lastHistoryQueryRef.current !== trimmed) {
+          lastHistoryQueryRef.current = trimmed;
+          addSearchHistory(trimmed);
+        }
+        return;
+      }
+
+      setIsLoading(true);
 
       // 每次搜索时重新读取设置，确保使用最新的配置
       let currentFluidSearch = useFluidSearch;
@@ -708,28 +760,24 @@ function SearchPageClient() {
             setIsLoading(false);
           });
       }
-      setShowSuggestions(false);
-
       // 保存到搜索历史 (事件监听会自动更新界面)
-      addSearchHistory(query);
+      if (lastHistoryQueryRef.current !== trimmed) {
+        lastHistoryQueryRef.current = trimmed;
+        addSearchHistory(trimmed);
+      }
     } else {
+      resetVideoSearchStream();
+      setIsLoading(false);
+      lastHistoryQueryRef.current = '';
       setShowResults(false);
       setShowSuggestions(false);
     }
-  }, [searchParams]);
+  }, [searchParams, searchType]);
 
   // 组件卸载时，关闭可能存在的连接
   useEffect(() => {
     return () => {
-      if (eventSourceRef.current) {
-        try { eventSourceRef.current.close(); } catch { }
-        eventSourceRef.current = null;
-      }
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-      pendingResultsRef.current = [];
+      resetVideoSearchStream();
     };
   }, []);
 
@@ -753,18 +801,28 @@ function SearchPageClient() {
     setShowSuggestions(true);
   };
 
+  const normalizeSearchKeyword = (value: string) =>
+    value.trim().replace(/\s+/g, ' ');
+
   // YouTube搜索函数
   const handleYouTubeSearch = async (query: string, contentType = youtubeContentType, sortOrder = youtubeSortOrder) => {
-    if (!query.trim()) return;
+    const normalizedQuery = normalizeSearchKeyword(query);
+    if (!normalizedQuery) return;
+    const requestId = ++youtubeSearchRequestIdRef.current;
+    const sameQueryRefresh = lastYoutubeQueryRef.current === normalizedQuery;
+    const hasVisibleResults = Array.isArray(youtubeResults) && youtubeResults.length > 0;
+    lastYoutubeQueryRef.current = normalizedQuery;
 
     setYoutubeLoading(true);
     setYoutubeError(null);
     setYoutubeWarning(null);
-    setYoutubeResults(null);
+    if (!sameQueryRefresh) {
+      setYoutubeResults(null);
+    }
 
     try {
       // 构建搜索URL，包含内容类型和排序参数
-      let searchUrl = `/api/youtube/search?q=${encodeURIComponent(query.trim())}`;
+      let searchUrl = `/api/youtube/search?q=${encodeURIComponent(normalizedQuery)}`;
       if (contentType && contentType !== 'all') {
         searchUrl += `&contentType=${contentType}`;
       }
@@ -773,6 +831,9 @@ function SearchPageClient() {
       }
       const response = await fetch(searchUrl);
       const data = await response.json();
+      if (requestId !== youtubeSearchRequestIdRef.current) {
+        return;
+      }
 
       if (response.ok && data.success) {
         setYoutubeResults(data.videos || []);
@@ -781,9 +842,17 @@ function SearchPageClient() {
           setYoutubeWarning(data.warning);
         }
       } else {
-        setYoutubeError(data.error || 'YouTube搜索失败');
+        const message = data.error || 'YouTube搜索失败';
+        if (sameQueryRefresh && hasVisibleResults) {
+          setYoutubeWarning(message);
+        } else {
+          setYoutubeError(message);
+        }
       }
     } catch (error: any) {
+      if (requestId !== youtubeSearchRequestIdRef.current) {
+        return;
+      }
       console.error('YouTube搜索请求失败:', error);
       // 尝试提取具体的错误消息
       let errorMessage = 'YouTube搜索请求失败，请稍后重试';
@@ -792,24 +861,41 @@ function SearchPageClient() {
       } else if (typeof error === 'string') {
         errorMessage = error;
       }
-      setYoutubeError(errorMessage);
+      if (sameQueryRefresh && hasVisibleResults) {
+        setYoutubeWarning(errorMessage);
+      } else {
+        setYoutubeError(errorMessage);
+      }
     } finally {
-      setYoutubeLoading(false);
+      if (requestId === youtubeSearchRequestIdRef.current) {
+        setYoutubeLoading(false);
+      }
     }
   };
 
   // 网盘搜索函数
   const handleNetDiskSearch = async (query: string) => {
-    if (!query.trim()) return;
+    const normalizedQuery = normalizeSearchKeyword(query);
+    if (!normalizedQuery) return;
+    const requestId = ++netdiskSearchRequestIdRef.current;
+    const sameQueryRefresh = lastNetdiskQueryRef.current === normalizedQuery;
+    const hasVisibleResults = !!netdiskResults && Object.keys(netdiskResults).length > 0;
+    lastNetdiskQueryRef.current = normalizedQuery;
 
     setNetdiskLoading(true);
     setNetdiskError(null);
-    setNetdiskResults(null);
-    setNetdiskTotal(0);
+    setNetdiskWarning(null);
+    if (!sameQueryRefresh) {
+      setNetdiskResults(null);
+      setNetdiskTotal(0);
+    }
 
     try {
-      const response = await fetch(`/api/netdisk/search?q=${encodeURIComponent(query.trim())}`);
+      const response = await fetch(`/api/netdisk/search?q=${encodeURIComponent(normalizedQuery)}`);
       const data = await response.json();
+      if (requestId !== netdiskSearchRequestIdRef.current) {
+        return;
+      }
 
       // 检查响应状态和success字段
       if (response.ok && data.success) {
@@ -817,30 +903,53 @@ function SearchPageClient() {
         setNetdiskTotal(data.data.total || 0);
       } else {
         // 处理错误情况（包括功能关闭、配置错误等）
-        setNetdiskError(data.error || '网盘搜索失败');
+        const message = data.error || '网盘搜索失败';
+        if (sameQueryRefresh && hasVisibleResults) {
+          setNetdiskWarning(message);
+        } else {
+          setNetdiskError(message);
+        }
       }
     } catch (error: any) {
+      if (requestId !== netdiskSearchRequestIdRef.current) {
+        return;
+      }
       console.error('网盘搜索请求失败:', error);
-      setNetdiskError('网盘搜索请求失败，请稍后重试');
+      const message = '网盘搜索请求失败，请稍后重试';
+      if (sameQueryRefresh && hasVisibleResults) {
+        setNetdiskWarning(message);
+      } else {
+        setNetdiskError(message);
+      }
     } finally {
-      setNetdiskLoading(false);
+      if (requestId === netdiskSearchRequestIdRef.current) {
+        setNetdiskLoading(false);
+      }
     }
   };
 
   // TMDB演员搜索函数
   const handleTmdbActorSearch = async (query: string, type = tmdbActorType, filterState = tmdbFilterState) => {
-    if (!query.trim()) return;
+    const normalizedQuery = normalizeSearchKeyword(query);
+    if (!normalizedQuery) return;
+    const requestId = ++tmdbActorSearchRequestIdRef.current;
+    const sameQueryRefresh = lastTmdbActorQueryRef.current === normalizedQuery;
+    const hasVisibleResults = Array.isArray(tmdbActorResults) && tmdbActorResults.length > 0;
+    lastTmdbActorQueryRef.current = normalizedQuery;
 
-    console.log(`🚀 [前端TMDB] 开始搜索: ${query}, type=${type}`);
+    console.log(`🚀 [前端TMDB] 开始搜索: ${normalizedQuery}, type=${type}`);
 
     setTmdbActorLoading(true);
     setTmdbActorError(null);
-    setTmdbActorResults(null);
+    setTmdbActorWarning(null);
+    if (!sameQueryRefresh) {
+      setTmdbActorResults(null);
+    }
 
     try {
       // 构建筛选参数
       const params = new URLSearchParams({
-        actor: query.trim(),
+        actor: normalizedQuery,
         type: type
       });
 
@@ -867,17 +976,35 @@ function SearchPageClient() {
       // 调用TMDB API端点
       const response = await fetch(`/api/tmdb/actor?${params.toString()}`);
       const data = await response.json();
+      if (requestId !== tmdbActorSearchRequestIdRef.current) {
+        return;
+      }
 
       if (response.ok && data.code === 200) {
         setTmdbActorResults(data.list || []);
       } else {
-        setTmdbActorError(data.error || data.message || '搜索演员失败');
+        const message = data.error || data.message || '搜索演员失败';
+        if (sameQueryRefresh && hasVisibleResults) {
+          setTmdbActorWarning(message);
+        } else {
+          setTmdbActorError(message);
+        }
       }
     } catch (error: any) {
+      if (requestId !== tmdbActorSearchRequestIdRef.current) {
+        return;
+      }
       console.error('TMDB演员搜索请求失败:', error);
-      setTmdbActorError('搜索演员失败，请稍后重试');
+      const message = '搜索演员失败，请稍后重试';
+      if (sameQueryRefresh && hasVisibleResults) {
+        setTmdbActorWarning(message);
+      } else {
+        setTmdbActorError(message);
+      }
     } finally {
-      setTmdbActorLoading(false);
+      if (requestId === tmdbActorSearchRequestIdRef.current) {
+        setTmdbActorLoading(false);
+      }
     }
   };
 
@@ -959,11 +1086,14 @@ function SearchPageClient() {
                     // 切换到影视搜索时，清除网盘、YouTube和TMDB演员搜索状态
                     setNetdiskResults(null);
                     setNetdiskError(null);
+                    setNetdiskWarning(null);
                     setNetdiskTotal(0);
                     setYoutubeResults(null);
                     setYoutubeError(null);
+                    setYoutubeWarning(null);
                     setTmdbActorResults(null);
                     setTmdbActorError(null);
+                    setTmdbActorWarning(null);
                     // 如果有搜索词且当前显示结果，触发影视搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
                     if (currentQuery && showResults) {
@@ -982,17 +1112,23 @@ function SearchPageClient() {
                 <button
                   type='button'
                   onClick={() => {
+                    const wasAlreadyNetdisk = searchType === 'netdisk';
                     setSearchType('netdisk');
-                    // 清除之前的网盘搜索状态，确保重新开始
+                    // 切到网盘标签时，仅在跨标签切换时重置已有结果
                     setNetdiskError(null);
-                    setNetdiskResults(null);
+                    setNetdiskWarning(null);
+                    if (!wasAlreadyNetdisk) {
+                      setNetdiskResults(null);
+                    }
                     setYoutubeResults(null);
                     setYoutubeError(null);
+                    setYoutubeWarning(null);
                     setTmdbActorResults(null);
                     setTmdbActorError(null);
+                    setTmdbActorWarning(null);
                     // 如果当前有搜索词，立即触发网盘搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
-                    if (currentQuery && showResults) {
+                    if (currentQuery && showResults && wasAlreadyNetdisk) {
                       handleNetDiskSearch(currentQuery);
                     }
                   }}
@@ -1009,21 +1145,24 @@ function SearchPageClient() {
                   onClick={() => {
                     const wasAlreadyYoutube = searchType === 'youtube';
                     setSearchType('youtube');
-                    // 清除之前的YouTube搜索状态，确保重新开始
+                    // 切到 YouTube 标签时，仅在跨标签切换时重置已有结果
                     setYoutubeError(null);
                     setYoutubeWarning(null);
-                    setYoutubeResults(null);
+                    if (!wasAlreadyYoutube) {
+                      setYoutubeResults(null);
+                    }
                     // 注意：不重置排序和内容类型，保持用户选择
                     setNetdiskResults(null);
                     setNetdiskError(null);
+                    setNetdiskWarning(null);
                     setNetdiskTotal(0);
                     setTmdbActorResults(null);
                     setTmdbActorError(null);
+                    setTmdbActorWarning(null);
                     // 如果当前有搜索词，立即触发YouTube搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
-                    if (currentQuery && showResults) {
-                      // 如果已经在YouTube标签，或者是新切换，都强制重新搜索
-                      setTimeout(() => handleYouTubeSearch(currentQuery), 0);
+                    if (currentQuery && showResults && wasAlreadyYoutube) {
+                      handleYouTubeSearch(currentQuery);
                     }
                   }}
                   className={`flex-shrink-0 px-4 sm:px-6 py-3 text-sm sm:text-base font-bold rounded-xl transition-all duration-300 whitespace-nowrap min-w-[110px] sm:min-w-0 ${
@@ -1037,18 +1176,24 @@ function SearchPageClient() {
                 <button
                   type='button'
                   onClick={() => {
+                    const wasAlreadyTmdbActor = searchType === 'tmdb-actor';
                     setSearchType('tmdb-actor');
                     // 清除之前的搜索状态
                     setTmdbActorError(null);
-                    setTmdbActorResults(null);
+                    setTmdbActorWarning(null);
+                    if (!wasAlreadyTmdbActor) {
+                      setTmdbActorResults(null);
+                    }
                     setNetdiskResults(null);
                     setNetdiskError(null);
+                    setNetdiskWarning(null);
                     setNetdiskTotal(0);
                     setYoutubeResults(null);
                     setYoutubeError(null);
+                    setYoutubeWarning(null);
                     // 如果当前有搜索词，立即触发TMDB演员搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
-                    if (currentQuery && showResults) {
+                    if (currentQuery && showResults && wasAlreadyTmdbActor) {
                       handleTmdbActorSearch(currentQuery, tmdbActorType, tmdbFilterState);
                     }
                   }}
@@ -1184,12 +1329,19 @@ function SearchPageClient() {
 
                   {/* 根据资源类型显示不同的搜索结果 */}
                   {netdiskResourceType === 'netdisk' ? (
-                    <NetDiskSearchResults
-                      results={netdiskResults}
-                      loading={netdiskLoading}
-                      error={netdiskError}
-                      total={netdiskTotal}
-                    />
+                    <>
+                      {netdiskWarning && (
+                        <div className='mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'>
+                          刷新网盘结果时遇到问题，已保留上一批结果：{netdiskWarning}
+                        </div>
+                      )}
+                      <NetDiskSearchResults
+                        results={netdiskResults}
+                        loading={netdiskLoading}
+                        error={netdiskError}
+                        total={netdiskTotal}
+                      />
+                    </>
                   ) : (
                     <AcgSearch
                       keyword={searchQuery.trim() || searchParams?.get('q') || ''}
@@ -1259,6 +1411,12 @@ function SearchPageClient() {
                       />
                     </div>
                   </div>
+
+                  {tmdbActorWarning && (
+                    <div className='mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'>
+                      刷新演员作品时遇到问题，已保留上一批结果：{tmdbActorWarning}
+                    </div>
+                  )}
 
                   {tmdbActorError ? (
                     <div className='text-center py-8'>
