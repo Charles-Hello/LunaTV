@@ -4,7 +4,7 @@
 
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import { Heart, ChevronUp, Download, X } from 'lucide-react';
@@ -71,6 +71,26 @@ import {
   usePrefetchDoubanData,
 } from './hooks/usePlayPagePrefetch';
 
+// 播放速率持久化
+const PLAYER_PLAYBACK_RATE_KEY = 'moontv_player_playback_rate';
+
+function sanitizePlaybackRate(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
+  const allowedRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+  return allowedRates.includes(value) ? value : 1.0;
+}
+
+function loadPlaybackRate(): number {
+  if (typeof window === 'undefined') return 1.0;
+  try {
+    const raw = localStorage.getItem(PLAYER_PLAYBACK_RATE_KEY);
+    if (!raw) return 1.0;
+    return sanitizePlaybackRate(Number(raw));
+  } catch {
+    return 1.0;
+  }
+}
+
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
   interface HTMLVideoElement {
@@ -118,6 +138,8 @@ function PlayPageClient() {
 
   // 收藏状态
   const [favorited, setFavorited] = useState(false);
+  // 追踪当前收藏实际存储的 key（source+id），用于切换源后正确删除
+  const favoritedKeyRef = useRef<string | null>(null);
 
   // 返回顶部按钮显示状态
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -717,8 +739,8 @@ function PlayPageClient() {
   const resumeTimeRef = useRef<number | null>(null);
   // 上次使用的音量，默认 0.7
   const lastVolumeRef = useRef<number>(0.7);
-  // 上次使用的播放速率，默认 1.0
-  const lastPlaybackRateRef = useRef<number>(1.0);
+  // 上次使用的播放速率，从 localStorage 恢复
+  const lastPlaybackRateRef = useRef<number>(loadPlaybackRate());
 
   const [sourceSearchLoading, setSourceSearchLoading] = useState(false);
   const [sourceSearchError, setSourceSearchError] = useState<string | null>(
@@ -3401,6 +3423,38 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 收藏相关
   // ---------------------------------------------------------------------------
+
+  // 在收藏列表中查找匹配的收藏（按 key 精确匹配 + 按 title 模糊匹配）
+  const findMatchedFavoriteKey = useCallback((
+    favorites: Record<string, any>,
+  ): string | null => {
+    // 1. 精确匹配：当前源 key
+    const currentKey = currentSource && currentId ? `${currentSource}+${currentId}` : null;
+    if (currentKey && favorites[currentKey]) return currentKey;
+
+    // 2. 精确匹配：豆瓣/Bangumi/短剧虚拟源
+    if (videoDoubanId) {
+      const doubanKey = `douban+${videoDoubanId}`;
+      if (favorites[doubanKey]) return doubanKey;
+      const bangumiKey = `bangumi+${videoDoubanId}`;
+      if (favorites[bangumiKey]) return bangumiKey;
+    }
+    if (shortdramaId) {
+      const sdKey = `shortdrama+${shortdramaId}`;
+      if (favorites[sdKey]) return sdKey;
+    }
+
+    // 3. 按 title 匹配：同一部片在不同源有不同 source+id，用标题兜底
+    const title = videoTitleRef.current;
+    if (title) {
+      for (const [key, fav] of Object.entries(favorites)) {
+        if ((fav as any)?.title === title) return key;
+      }
+    }
+
+    return null;
+  }, [currentSource, currentId, videoDoubanId, shortdramaId]);
+
   // 每当 source 或 id 变化时检查收藏状态（支持豆瓣/Bangumi等虚拟源）
   useEffect(() => {
     if (!currentSource || !currentId) return;
@@ -3408,22 +3462,14 @@ function PlayPageClient() {
       try {
         const favorites = await getAllFavorites();
 
-        // 检查多个可能的收藏key
-        const possibleKeys = [
-          `${currentSource}+${currentId}`, // 当前真实播放源
-          videoDoubanId ? `douban+${videoDoubanId}` : null, // 豆瓣收藏
-          videoDoubanId ? `bangumi+${videoDoubanId}` : null, // Bangumi收藏
-          shortdramaId ? `shortdrama+${shortdramaId}` : null, // 短剧收藏
-        ].filter(Boolean);
-
-        // 检查是否任一key已被收藏
-        const fav = possibleKeys.some(key => !!favorites[key as string]);
-        setFavorited(fav);
+        const matchedKey = findMatchedFavoriteKey(favorites);
+        favoritedKeyRef.current = matchedKey;
+        setFavorited(!!matchedKey);
       } catch (err) {
         console.error('检查收藏状态失败:', err);
       }
     })();
-  }, [currentSource, currentId, videoDoubanId, shortdramaId]);
+  }, [currentSource, currentId, videoDoubanId, shortdramaId, findMatchedFavoriteKey]);
 
   // 监听收藏数据更新事件（支持豆瓣/Bangumi等虚拟源）
   useEffect(() => {
@@ -3432,22 +3478,14 @@ function PlayPageClient() {
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
       (favorites: Record<string, any>) => {
-        // 检查多个可能的收藏key
-        const possibleKeys = [
-          generateStorageKey(currentSource, currentId), // 当前真实播放源
-          videoDoubanId ? `douban+${videoDoubanId}` : null, // 豆瓣收藏
-          videoDoubanId ? `bangumi+${videoDoubanId}` : null, // Bangumi收藏
-          shortdramaId ? `shortdrama+${shortdramaId}` : null, // 短剧收藏
-        ].filter(Boolean);
-
-        // 检查是否任一key已被收藏
-        const isFav = possibleKeys.some(key => !!favorites[key as string]);
-        setFavorited(isFav);
+        const matchedKey = findMatchedFavoriteKey(favorites);
+        favoritedKeyRef.current = matchedKey;
+        setFavorited(!!matchedKey);
       }
     );
 
     return unsubscribe;
-  }, [currentSource, currentId, videoDoubanId, shortdramaId]);
+  }, [currentSource, currentId, videoDoubanId, shortdramaId, findMatchedFavoriteKey]);
 
   // 自动更新收藏的集数和片源信息（支持豆瓣/Bangumi/短剧等虚拟源）
   useEffect(() => {
@@ -3458,26 +3496,9 @@ function PlayPageClient() {
         const realEpisodes = detail.episodes.length || 1;
         const favorites = await getAllFavorites();
 
-        // 检查多个可能的收藏key
-        const possibleKeys = [
-          `${currentSource}+${currentId}`, // 当前真实播放源
-          videoDoubanId ? `douban+${videoDoubanId}` : null, // 豆瓣收藏
-          videoDoubanId ? `bangumi+${videoDoubanId}` : null, // Bangumi收藏
-        ].filter(Boolean);
-
-        let favoriteToUpdate = null;
-        let favoriteKey = '';
-
-        // 找到已存在的收藏
-        for (const key of possibleKeys) {
-          if (favorites[key as string]) {
-            favoriteToUpdate = favorites[key as string];
-            favoriteKey = key as string;
-            break;
-          }
-        }
-
-        if (!favoriteToUpdate) return;
+        const favoriteKey = findMatchedFavoriteKey(favorites);
+        if (!favoriteKey) return;
+        const favoriteToUpdate = favorites[favoriteKey];
 
         // 检查是否需要更新（集数不同或缺少片源信息）
         const needsUpdate =
@@ -3557,14 +3578,18 @@ function PlayPageClient() {
       return;
 
     if (favorited) {
-      // 如果已收藏，删除收藏
+      // 如果已收藏，使用实际存储的key来删除（可能和当前源不同）
+      const keyToDelete = favoritedKeyRef.current || `${currentSourceRef.current}+${currentIdRef.current}`;
+      const [delSource, delId] = keyToDelete.split('+');
+
       deleteFavoriteMutation.mutate(
         {
-          source: currentSourceRef.current,
-          id: currentIdRef.current,
+          source: delSource,
+          id: delId,
         },
         {
           onSuccess: () => {
+            favoritedKeyRef.current = null;
             setFavorited(false);
           },
           onError: (err) => {
@@ -3593,6 +3618,8 @@ function PlayPageClient() {
         contentType = 'shortdrama';
       }
 
+      const newKey = `${currentSourceRef.current}+${currentIdRef.current}`;
+
       // 如果未收藏，添加收藏
       saveFavoriteMutation.mutate(
         {
@@ -3611,6 +3638,7 @@ function PlayPageClient() {
         },
         {
           onSuccess: () => {
+            favoritedKeyRef.current = newKey;
             setFavorited(true);
           },
           onError: (err) => {
@@ -4036,6 +4064,54 @@ function PlayPageClient() {
               return '打开弹幕设置面板';
             },
           },
+          {
+            width: 200,
+            html: '显示模式',
+            icon: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
+            tooltip: (() => {
+              const mode = localStorage.getItem('video_object_fit') || 'contain';
+              const modeNames: Record<string, string> = {
+                'contain': '默认(完整显示)',
+                'cover': '填充(裁切)',
+                'fill': '拉伸(变形)'
+              };
+              return modeNames[mode] || '默认(完整显示)';
+            })(),
+            selector: [
+              {
+                html: '默认(完整显示)',
+                value: 'contain',
+                default: (localStorage.getItem('video_object_fit') || 'contain') === 'contain',
+              },
+              {
+                html: '填充(裁切)',
+                value: 'cover',
+                default: localStorage.getItem('video_object_fit') === 'cover',
+              },
+              {
+                html: '拉伸(变形)',
+                value: 'fill',
+                default: localStorage.getItem('video_object_fit') === 'fill',
+              },
+            ],
+            onSelect: function (item: any) {
+              const mode = item.value;
+              localStorage.setItem('video_object_fit', mode);
+
+              // 应用到当前视频元素
+              if (artPlayerRef.current?.video) {
+                artPlayerRef.current.video.style.objectFit = mode;
+              }
+
+              const modeNames: Record<string, string> = {
+                'contain': '默认(完整显示)',
+                'cover': '填充(裁切)',
+                'fill': '拉伸(变形)'
+              };
+
+              return modeNames[mode] || item.html;
+            },
+          },
           ...(webGPUSupported ? [
             {
               name: '超分设置',
@@ -4295,6 +4371,12 @@ function PlayPageClient() {
 
         // 使用ArtPlayer layers API添加分辨率徽章（带渐变和发光效果）
         const video = artPlayerRef.current.video as HTMLVideoElement;
+
+        // 🖥️ 应用保存的显示模式设置（支持超宽屏）
+        const savedObjectFit = localStorage.getItem('video_object_fit') || 'contain';
+        if (video) {
+          video.style.objectFit = savedObjectFit;
+        }
 
         // 添加分辨率徽章layer
         artPlayerRef.current.layers.add({
@@ -4957,7 +5039,17 @@ function PlayPageClient() {
         lastVolumeRef.current = artPlayerRef.current.volume;
       });
       artPlayerRef.current.on('video:ratechange', () => {
-        lastPlaybackRateRef.current = artPlayerRef.current.playbackRate;
+        lastPlaybackRateRef.current = sanitizePlaybackRate(
+          artPlayerRef.current.playbackRate,
+        );
+        try {
+          localStorage.setItem(
+            PLAYER_PLAYBACK_RATE_KEY,
+            String(lastPlaybackRateRef.current),
+          );
+        } catch {
+          // ignore
+        }
       });
 
       // 监听全屏事件，进入全屏后自动隐藏控制栏 + 显示标题层
@@ -5102,8 +5194,7 @@ function PlayPageClient() {
           if (
             Math.abs(
               artPlayerRef.current.playbackRate - lastPlaybackRateRef.current
-            ) > 0.01 &&
-            isWebKit
+            ) > 0.01
           ) {
             artPlayerRef.current.playbackRate = lastPlaybackRateRef.current;
           }
