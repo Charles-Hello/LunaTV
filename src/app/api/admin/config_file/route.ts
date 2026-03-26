@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig, refineConfig } from '@/lib/config';
+import { DEFAULT_CONFIG_SUBSCRIPTION_URL } from '@/lib/config-subscription';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -61,8 +62,8 @@ export async function POST(request: NextRequest) {
     adminConfig.ConfigFile = configFile;
     if (!adminConfig.ConfigSubscribtion) {
       adminConfig.ConfigSubscribtion = {
-        URL: '',
-        AutoUpdate: false,
+        URL: DEFAULT_CONFIG_SUBSCRIPTION_URL,
+        AutoUpdate: true,
         LastCheck: '',
       };
     }

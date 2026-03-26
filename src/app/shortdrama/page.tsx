@@ -10,7 +10,7 @@ import {
   getShortDramaList,
   searchShortDramas,
 } from '@/lib/shortdrama.client';
-import { cleanExpiredCache } from '@/lib/shortdrama-cache';
+import { initShortdramaCache } from '@/lib/shortdrama-cache';
 import { ShortDramaCategory, ShortDramaItem } from '@/lib/types';
 
 import PageLayout from '@/components/PageLayout';
@@ -58,8 +58,8 @@ export default function ShortDramaPage() {
 
   // 获取分类列表
   useEffect(() => {
-    // 清理过期缓存
-    cleanExpiredCache().catch(console.error);
+    // 初始化短剧缓存清理任务
+    initShortdramaCache().catch(console.error);
 
     const fetchCategories = async () => {
       const cats = await getShortDramaCategories();

@@ -1,2 +1,17 @@
 .env
 .env*.local
+.git
+.github
+.husky
+.next
+.video-cache
+node_modules
+coverage
+dist
+tmp
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode

@@ -1,4 +1,5 @@
 import { ClientCache } from './client-cache';
+import { getAuthInfoFromBrowserCookie } from './auth';
 
 // 短剧数据缓存配置（秒）
 const SHORTDRAMA_CACHE_EXPIRE = {
@@ -9,6 +10,8 @@ const SHORTDRAMA_CACHE_EXPIRE = {
   episodes: 24 * 60 * 60,  // 集数24小时（基本不变）
   parse: 30 * 60,          // 解析结果30分钟（URL会过期）
 };
+
+let shortdramaCacheInitialized = false;
 
 // 缓存工具函数
 function getCacheKey(prefix: string, params: Record<string, any>): string {
@@ -143,18 +146,25 @@ async function clearRecommendsCache(): Promise<void> {
 
 // 初始化缓存系统（参考豆瓣实现）
 async function initShortdramaCache(): Promise<void> {
+  if (typeof window === 'undefined' || shortdramaCacheInitialized) {
+    return;
+  }
+
+  if (!getAuthInfoFromBrowserCookie()) {
+    return;
+  }
+
+  shortdramaCacheInitialized = true;
+
   // 立即清理一次过期缓存
   await cleanExpiredCache();
 
   // 每1小时清理一次过期缓存
-  setInterval(() => cleanExpiredCache(), 60 * 60 * 1000);
+  setInterval(() => {
+    void cleanExpiredCache();
+  }, 60 * 60 * 1000);
 
   console.log('短剧缓存系统已初始化');
-}
-
-// 在模块加载时初始化缓存系统
-if (typeof window !== 'undefined') {
-  initShortdramaCache().catch(console.error);
 }
 
 export {
@@ -162,6 +172,7 @@ export {
   getCacheKey,
   getCache,
   setCache,
+  initShortdramaCache,
   cleanExpiredCache,
   clearRecommendsCache,
 };

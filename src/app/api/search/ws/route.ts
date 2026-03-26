@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
-import { searchFromApi } from '@/lib/downstream';
+import { generateSearchVariants, searchFromApi } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
 
 export const runtime = 'nodejs';
@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
 
   const config = await getConfig();
   const apiSites = await getAvailableApiSites(authInfo.username);
+  const searchVariants = generateSearchVariants(query);
 
   // 共享状态
   let streamClosed = false;
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
         try {
           // 添加超时控制
           const searchPromise = Promise.race([
-            searchFromApi(site, query),
+            searchFromApi(site, query, searchVariants),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`${site.name} timeout`)), 20000)
             ),

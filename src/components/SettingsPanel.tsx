@@ -77,7 +77,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   // ── Settings state (localStorage-backed) ──────────────────────────────────
   const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
-  const [enableOptimization, setEnableOptimization] = useState(false);
+  const [enableOptimization, setEnableOptimization] = useState(true);
   const [fluidSearch, setFluidSearch] = useState(true);
   const [liveDirectConnect, setLiveDirectConnect] = useState(false);
   const [playerBufferMode, setPlayerBufferMode] = useState<'standard' | 'enhanced' | 'max'>('standard');
@@ -87,8 +87,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const [continueWatchingMinProgress, setContinueWatchingMinProgress] = useState(5);
   const [continueWatchingMaxProgress, setContinueWatchingMaxProgress] = useState(100);
   const [enableContinueWatchingFilter, setEnableContinueWatchingFilter] = useState(false);
-  const [enableAutoSkip, setEnableAutoSkip] = useState(true);
-  const [enableAutoNextEpisode, setEnableAutoNextEpisode] = useState(true);
+  const [enableAutoSkip, setEnableAutoSkip] = useState(false);
+  const [enableAutoNextEpisode, setEnableAutoNextEpisode] = useState(false);
   const [requireClearConfirmation, setRequireClearConfirmation] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<'TS' | 'MP4'>('TS');
   const [exactSearch, setExactSearch] = useState(true);
@@ -104,7 +104,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     const RC = (window as any).RUNTIME_CONFIG || {};
 
     setDefaultAggregateSearch(readLS('defaultAggregateSearch', true));
-    setEnableOptimization(readLS('enableOptimization', false));
+    setEnableOptimization(readLS('enableOptimization', true));
     setFluidSearch(readLS('fluidSearch', RC.FLUID_SEARCH !== false));
     setLiveDirectConnect(readLS('liveDirectConnect', false));
     setDoubanProxyUrl(readLS('doubanProxyUrl', RC.DOUBAN_PROXY || ''));
@@ -114,8 +114,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setContinueWatchingMinProgress(readLS('continueWatchingMinProgress', 5));
     setContinueWatchingMaxProgress(readLS('continueWatchingMaxProgress', 100));
     setEnableContinueWatchingFilter(readLS('enableContinueWatchingFilter', false));
-    setEnableAutoSkip(readLS('enableAutoSkip', true));
-    setEnableAutoNextEpisode(readLS('enableAutoNextEpisode', true));
+    setEnableAutoSkip(readLS('enableAutoSkip', false));
+    setEnableAutoNextEpisode(readLS('enableAutoNextEpisode', false));
     setRequireClearConfirmation(readLS('requireClearConfirmation', false));
     const fmt = localStorage.getItem('downloadFormat');
     if (fmt === 'TS' || fmt === 'MP4') setDownloadFormat(fmt);
@@ -168,7 +168,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     const defaultFluidSearch = RC.FLUID_SEARCH !== false;
 
     setDefaultAggregateSearch(true);
-    setEnableOptimization(false);
+    setEnableOptimization(true);
     setFluidSearch(defaultFluidSearch);
     setLiveDirectConnect(false);
     setDoubanProxyUrl(defaultDoubanProxy);
@@ -178,13 +178,13 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setContinueWatchingMinProgress(5);
     setContinueWatchingMaxProgress(100);
     setEnableContinueWatchingFilter(false);
-    setEnableAutoSkip(true);
-    setEnableAutoNextEpisode(true);
+    setEnableAutoSkip(false);
+    setEnableAutoNextEpisode(false);
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
-    localStorage.setItem('enableOptimization', JSON.stringify(false));
+    localStorage.setItem('enableOptimization', JSON.stringify(true));
     localStorage.setItem('fluidSearch', JSON.stringify(defaultFluidSearch));
     localStorage.setItem('liveDirectConnect', JSON.stringify(false));
     localStorage.setItem('doubanProxyUrl', defaultDoubanProxy);
@@ -194,8 +194,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem('continueWatchingMinProgress', '5');
     localStorage.setItem('continueWatchingMaxProgress', '100');
     localStorage.setItem('enableContinueWatchingFilter', JSON.stringify(false));
-    localStorage.setItem('enableAutoSkip', JSON.stringify(true));
-    localStorage.setItem('enableAutoNextEpisode', JSON.stringify(true));
+    localStorage.setItem('enableAutoSkip', JSON.stringify(false));
+    localStorage.setItem('enableAutoNextEpisode', JSON.stringify(false));
     localStorage.setItem('requireClearConfirmation', JSON.stringify(false));
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');

@@ -5,6 +5,10 @@ import { unstable_noStore } from 'next/cache';
 import { db } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
+import {
+  DEFAULT_CONFIG_SUBSCRIPTION_URL,
+  fetchSubscribedConfig,
+} from './config-subscription';
 import { DEFAULT_USER_AGENT } from './user-agent';
 
 export interface ApiSite {
@@ -211,9 +215,9 @@ async function getInitConfig(configFile: string, subConfig: {
   AutoUpdate: boolean;
   LastCheck: string;
 } = {
-    URL: "",
-    AutoUpdate: false,
-    LastCheck: "",
+    URL: DEFAULT_CONFIG_SUBSCRIPTION_URL,
+    AutoUpdate: true,
+    LastCheck: '',
   }): Promise<AdminConfig> {
   let cfgFile: ConfigFileStruct;
   try {
@@ -321,6 +325,29 @@ async function getInitConfig(configFile: string, subConfig: {
   return adminConfig;
 }
 
+async function bootstrapConfigFromSubscription(adminConfig: AdminConfig): Promise<AdminConfig> {
+  if (adminConfig.ConfigFile?.trim()) {
+    return adminConfig;
+  }
+
+  const subscriptionUrl = adminConfig.ConfigSubscribtion?.URL?.trim();
+  if (!subscriptionUrl || !adminConfig.ConfigSubscribtion?.AutoUpdate) {
+    return adminConfig;
+  }
+
+  try {
+    console.log('🌐 首次启动自动获取订阅配置:', subscriptionUrl);
+    adminConfig.ConfigFile = await fetchSubscribedConfig(subscriptionUrl);
+    adminConfig.ConfigSubscribtion.LastCheck = new Date().toISOString();
+    adminConfig = refineConfig(adminConfig);
+    await db.saveAdminConfig(adminConfig);
+  } catch (error) {
+    console.error('首次启动自动获取订阅配置失败:', error);
+  }
+
+  return adminConfig;
+}
+
 export async function getConfig(): Promise<AdminConfig> {
   // 🔥 防止 Next.js 在 Docker 环境下缓存配置（解决站点名称更新问题）
   unstable_noStore();
@@ -341,6 +368,7 @@ export async function getConfig(): Promise<AdminConfig> {
   if (!adminConfig) {
     adminConfig = await getInitConfig("");
   }
+  adminConfig = await bootstrapConfigFromSubscription(adminConfig);
   adminConfig = await configSelfCheck(adminConfig);
 
   // 🔥 仍然更新 cachedConfig 以保持向后兼容，但不再依赖它
@@ -355,6 +383,24 @@ export function clearConfigCache(): void {
 }
 
 export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminConfig> {
+  if (!adminConfig.ConfigSubscribtion) {
+    adminConfig.ConfigSubscribtion = {
+      URL: DEFAULT_CONFIG_SUBSCRIPTION_URL,
+      AutoUpdate: true,
+      LastCheck: '',
+    };
+  } else {
+    if (!adminConfig.ConfigSubscribtion.URL) {
+      adminConfig.ConfigSubscribtion.URL = DEFAULT_CONFIG_SUBSCRIPTION_URL;
+    }
+    if (typeof adminConfig.ConfigSubscribtion.AutoUpdate !== 'boolean') {
+      adminConfig.ConfigSubscribtion.AutoUpdate = true;
+    }
+    if (!adminConfig.ConfigSubscribtion.LastCheck) {
+      adminConfig.ConfigSubscribtion.LastCheck = '';
+    }
+  }
+
   // 确保必要的属性存在和初始化
   if (!adminConfig.UserConfig) {
     adminConfig.UserConfig = { AllowRegister: true, Users: [] };
